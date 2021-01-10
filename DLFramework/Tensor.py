@@ -7,9 +7,11 @@ class Tensor(object):
     def __init__(self, data, autograd=False, creators=None, creation_op=None, id=None):
         """
         初始化
+        :param autograd: 是否自动求导
         :param data: 数据
         :param creators: 包含创建当前张量所用到的所有张量
         :param creation_op: 创建当前张量所用到的指令
+        :param id: 当前Tensor的id
         """
         self.data = np.array(data)
         self.creation_op = creation_op
@@ -20,34 +22,54 @@ class Tensor(object):
         if id is None:
             id = np.random.randint(0, 1000000)
         self.id = id
+        # 如果当前张量由其他张量生成，那么要给父张量添加孩子
         if creators is not None:
+            # 遍历所有父张量
             for c in creators:
+                # 如果当前节点是父张量第一次使用，那么将值记为1
                 if self.id not in c.children:
                     c.children[self.id] = 1
+                # 如果当前是第n次使用，那么就加1
                 else:
                     c.children[self.id] += 1
 
     def all_children_grads_accounted_for(self):
+        """
+        检查所有的孩子是否都计算了梯度
+        :return: 如果计算了那么就返回True
+        """
         for id, cnt in self.children.items():
             if cnt != 0:
                 return False
         return True
 
     def backward(self, grad=None, grad_origin=None):
+        """
+        反向传播
+        :param grad: 梯度
+        :param grad_origin: 子张量，也就是梯度来的张量
+        :return:
+        """
         if self.autograd:
+            # 如果有子张量
             if grad_origin is not None:
+                # 如果有子张量但是子张量使用次数却为0，那么说明出错误了，否则当前子张量使用次数减去1
                 if self.children[grad_origin.id] == 0:
                     raise Exception("cannot backprop more than once")
                 else:
                     self.children[grad_origin.id] -= 1
+            # 如果当前张量还未有梯度，那么就直接等于
             if self.grad is None:
                 self.grad = grad
+            # 如果当前张量已经有梯度了，那么需要追加
             else:
                 self.grad += grad
+            # 如果此张量的父张量列表不为空，并且它的所有子张量都已经被计算梯度，那么继续向下传播
+            # 此张量是由其他张量计算得出的，并且通过此张量计算的张量的梯度都已计算
             if self.creators is not None and (self.all_children_grads_accounted_for() or grad_origin is None):
                 if self.creation_op == "add":
-                    self.creators[0].backward(grad)
-                    self.creators[1].backward(grad)
+                    self.creators[0].backward(self.grad, self)
+                    self.creators[1].backward(self.grad, self)
 
     def __add__(self, other):
         if self.autograd and other.autograd:
@@ -63,5 +85,15 @@ class Tensor(object):
     def __str__(self):
         return str(self.data.__str__())
 
-    def h(self):
-        print(1)
+
+# Test
+if __name__ == '__main__':
+    a = Tensor([1, 2, 3, 4, 5], autograd=True)
+    b = Tensor([2, 2, 2, 2, 2], autograd=True)
+    c = Tensor([5, 4, 3, 2, 1], autograd=True)
+    d = a + b
+    e = b + c
+    f = d + e
+    # print(a.id, b.id, c.id, d.id, e.id, f.id)
+    f.backward(Tensor(np.array([1, 1, 1, 1, 1])))
+    print(b.grad)

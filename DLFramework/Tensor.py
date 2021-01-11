@@ -70,7 +70,15 @@ class Tensor(object):
                 if self.creation_op == "add":
                     self.creators[0].backward(self.grad, self)
                     self.creators[1].backward(self.grad, self)
+                if self.creation_op == "neg":
+                    self.creators[0].backward(self.grad.__neg__(), self)
+                if self.creation_op == "sub":
+                    new = Tensor(self.grad.data)
+                    self.creators[0].backward(new, self)
+                    new = Tensor(self.grad.__neg__().data)
+                    self.creators[1].backward(new, self)
 
+    # 加法（已反向传播）
     def __add__(self, other):
         if self.autograd and other.autograd:
             return Tensor(self.data + other.data,
@@ -78,6 +86,73 @@ class Tensor(object):
                           creators=[self, other],
                           creation_op="add")
         return Tensor(self.data + other.data)
+
+    # 负数（已反向传播）
+    def __neg__(self):
+        if self.autograd:
+            return Tensor(self.data * -1,
+                          autograd=True,
+                          creators=[self],
+                          creation_op="neg")
+        return Tensor(self.data * -1)
+
+    # 减法（已反向传播）
+    def __sub__(self, other):
+        if self.autograd and other.autograd:
+            return Tensor(self.data - other.data,
+                          autograd=True,
+                          creators=[self, other],
+                          creation_op="sub")
+        return Tensor(self.data - other.data)
+
+    # 乘法
+    def __mul__(self, other):
+        if self.autograd and other.autograd:
+            return Tensor(self.data * other.data,
+                          autograd=True,
+                          creators=[self, other],
+                          creation_op="mul")
+        return Tensor(self.data * other.data)
+
+    # 求和
+    def sum(self, dim):
+        if self.autograd:
+            return Tensor(self.data.sum(dim),
+                          autograd=True,
+                          creators=[self],
+                          creation_op="sum_"+str(dim))
+        return Tensor(self.data.sum(dim))
+
+    # 扩展
+    def expand(self, dim, copies):
+        trans_cmd = list(range(0, len(self.data.shape)))
+        trans_cmd.insert(dim,len(self.data.shape))
+        new_shape = list(self.data.shape) + [copies]
+        new_data = self.data.repeat(copies).reshape(new_shape)
+        new_data = new_data.transpose(trans_cmd)
+        if self.autograd:
+            return Tensor(new_data,
+                          autograd=True,
+                          creators=[self],
+                          creation_op="expand_" + str(dim))
+        return Tensor(new_data)
+
+    # 转置
+    def transpose(self):
+        if self.autograd:
+            return Tensor(self.data.transpose(),
+                          autograd=True,
+                          creators=[self],
+                          creation_op="transpose")
+        return Tensor(self.data.transpose())
+
+    def mm(self, x):
+        if self.autograd:
+            return Tensor(self.data.dot(x.data),
+                          autograd=True,
+                          creators=[self, x],
+                          creation_op="mm")
+        return Tensor(self.data.dot(x.data))
 
     def __repr__(self):
         return str(self.data.__repr__())
@@ -88,12 +163,14 @@ class Tensor(object):
 
 # Test
 if __name__ == '__main__':
-    a = Tensor([1, 2, 3, 4, 5], autograd=True)
-    b = Tensor([2, 2, 2, 2, 2], autograd=True)
+    a = Tensor([[1,2], [3,4]], autograd=True)
+    b = Tensor([[2], [2]], autograd=True)
     c = Tensor([5, 4, 3, 2, 1], autograd=True)
-    d = a + b
-    e = b + c
-    f = d + e
+    print(a,b)
+    print(a.mm(b))
+    # d = a - b
+    # e = b + c
+    # f = d + e
     # print(a.id, b.id, c.id, d.id, e.id, f.id)
-    f.backward(Tensor(np.array([1, 1, 1, 1, 1])))
-    print(b.grad)
+    # d.backward(Tensor(np.array([1, 1, 1, 1, 1])))
+    # print(b.grad)

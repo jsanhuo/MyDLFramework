@@ -67,16 +67,45 @@ class Tensor(object):
             # 如果此张量的父张量列表不为空，并且它的所有子张量都已经被计算梯度，那么继续向下传播
             # 此张量是由其他张量计算得出的，并且通过此张量计算的张量的梯度都已计算
             if self.creators is not None and (self.all_children_grads_accounted_for() or grad_origin is None):
+                # add 的导数都为1
                 if self.creation_op == "add":
                     self.creators[0].backward(self.grad, self)
                     self.creators[1].backward(self.grad, self)
+                # neg的导数 -1 * grad
                 if self.creation_op == "neg":
                     self.creators[0].backward(self.grad.__neg__(), self)
+                # sub的导数 被减数为1 减数为-1
                 if self.creation_op == "sub":
                     new = Tensor(self.grad.data)
                     self.creators[0].backward(new, self)
                     new = Tensor(self.grad.__neg__().data)
                     self.creators[1].backward(new, self)
+                # mul的导数 第一个运算数的导数是第二个数
+                #          第二个运算数的导数是第一个数
+                if self.creation_op == "mul":
+                    new = self.grad * self.creators[1]
+                    self.creators[0].backward(new, self)
+                    new = self.grad * self.creators[0]
+                    self.creators[1].backward(new, self)
+                # mm 矩阵的导数
+                if self.creation_op == "mm":
+                    c0 = self.creators[0]
+                    c1 = self.creators[1]
+                    new = self.grad.mm(c1.transpose())
+                    c0.backward(new)
+                    new = self.grad.transpose().mm(c0).transpose()
+                    c1.backward(new)
+
+                if self.creation_op == "transpose":
+                    self.creators[0].backward(self.grad.transpose())
+
+                if "sum" in self.creation_op:
+                    dim = int(self.creation_op.split("_")[1])
+                    self.creators[0].backward(self.grad.expand(dim, self.creators[0].data.shape[dim]))
+
+                if "expand" in self.creation_op:
+                    dim = int(self.creation_op.split("_")[1])
+                    self.creators[0].backward(self.grad.sum(dim))
 
     # 加法（已反向传播）
     def __add__(self, other):
@@ -105,7 +134,7 @@ class Tensor(object):
                           creation_op="sub")
         return Tensor(self.data - other.data)
 
-    # 乘法
+    # 乘法（已反向传播）
     def __mul__(self, other):
         if self.autograd and other.autograd:
             return Tensor(self.data * other.data,
@@ -114,19 +143,19 @@ class Tensor(object):
                           creation_op="mul")
         return Tensor(self.data * other.data)
 
-    # 求和
+    # 求和（已反向传播）
     def sum(self, dim):
         if self.autograd:
             return Tensor(self.data.sum(dim),
                           autograd=True,
                           creators=[self],
-                          creation_op="sum_"+str(dim))
+                          creation_op="sum_" + str(dim))
         return Tensor(self.data.sum(dim))
 
-    # 扩展
+    # 扩展（已反向传播）
     def expand(self, dim, copies):
         trans_cmd = list(range(0, len(self.data.shape)))
-        trans_cmd.insert(dim,len(self.data.shape))
+        trans_cmd.insert(dim, len(self.data.shape))
         new_shape = list(self.data.shape) + [copies]
         new_data = self.data.repeat(copies).reshape(new_shape)
         new_data = new_data.transpose(trans_cmd)
@@ -137,7 +166,7 @@ class Tensor(object):
                           creation_op="expand_" + str(dim))
         return Tensor(new_data)
 
-    # 转置
+    # 转置（已反向传播）
     def transpose(self):
         if self.autograd:
             return Tensor(self.data.transpose(),
@@ -146,6 +175,7 @@ class Tensor(object):
                           creation_op="transpose")
         return Tensor(self.data.transpose())
 
+    # 矩阵乘法（已反向传播）
     def mm(self, x):
         if self.autograd:
             return Tensor(self.data.dot(x.data),
@@ -163,10 +193,10 @@ class Tensor(object):
 
 # Test
 if __name__ == '__main__':
-    a = Tensor([[1,2], [3,4]], autograd=True)
+    a = Tensor([[1, 2], [3, 4]], autograd=True)
     b = Tensor([[2], [2]], autograd=True)
     c = Tensor([5, 4, 3, 2, 1], autograd=True)
-    print(a,b)
+    print(a, b)
     print(a.mm(b))
     # d = a - b
     # e = b + c

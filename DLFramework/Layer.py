@@ -6,6 +6,7 @@ import numpy as np
 class Layer(object):
 
     def __init__(self):
+        # 参数集合
         self.parameters = list()
 
     def get_parameters(self):
@@ -27,6 +28,11 @@ class Linear(Layer):
         self.parameters.append(self.bias)
 
     def forward(self, input):
+        """
+        正向传播
+        :param input:
+        :return:
+        """
         return input.mm(self.weight) + self.bias.expand(0, len(input.data))
 
 
@@ -39,19 +45,44 @@ class Sequential(Layer):
         self.layers = layers
 
     def add(self, layer):
+        """
+        添加网络层
+        :param layer: 待添加的层
+        :return:
+        """
         self.layers.append(layer)
 
 
     def forward(self, input):
+        """
+        正向传播
+        :param input: 网络输入
+        :return: 网络输出
+        """
         for layer in self.layers:
             input = layer.forward(input)
         return input
 
-    # 获得所有参数
+
     def get_parameters(self):
+        """
+        获得所有参数
+        :return: 返回所有参数的列表
+        """
         params = list()
         for l in self.layers:
             params += l.get_parameters()
         return params
+
+
+# 损失函数层
+class MSELoss(Layer):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, pred, target):
+        # 通过公式来计算均方误差
+        return ((pred - target) * (pred - target)).sum(0)
 
 
